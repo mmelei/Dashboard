@@ -1,6 +1,5 @@
 ---
 title: "PrEP use among Men that have Sex with Men (MSM)"
-author: "Mele Mafi"
 output:
   flexdashboard::flex_dashboard:
     orientation: rows
