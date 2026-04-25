@@ -1,0 +1,340 @@
+---
+title: "PrEP use among Men that have Sex with Men (MSM)"
+author: "Mele Mafi"
+output:
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: fill
+runtime: shiny
+---
+
+
+```{r setup, echo=FALSE, results='hide'}
+#upload libraries
+library(tidyverse)
+library(survival)
+library(ggplot2)
+library(plotly)
+library(flexdashboard)
+library(shiny)
+
+# --- Load and prep data ---
+df <- read_csv("/Users/mele/Documents/Emory/Thesis/data/final_full_set_cohort.csv")
+
+#make vars numeric for survival analysis figures
+df$timestart <- as.numeric(df$timestart)
+df$timestop  <- as.numeric(df$timestop)
+df$prep      <- as.numeric(as.character(df$prep))
+
+#make them treated as factors in survival analysis hrs
+df[c("perc_protect", "future_prep", "stopnever",
+     "educ2", "ins2", "incomenew", "race2", "site", "rand_assign_text")] <- 
+  lapply(df[c("perc_protect", "future_prep", "stopnever",
+              "educ2", "ins2", "incomenew", "race2", "site", "rand_assign_text")], factor)
+
+# Fit models for figures
+fit_overall   <- coxph(Surv(timestart, timestop, prep) ~ 1,            data = df, model = TRUE)
+fit_protect   <- coxph(Surv(timestart, timestop, prep) ~ perc_protect, data = df, model = TRUE)
+fit_future    <- coxph(Surv(timestart, timestop, prep) ~ future_prep,  data = df, model = TRUE)
+fit_stopnever <- coxph(Surv(timestart, timestop, prep) ~ stopnever,    data = df, model = TRUE)
+
+# calculates and pulls vals for figure
+km_df <- function(fit, newdata = NULL, labels = "Overall") {
+  km   <- if (is.null(newdata)) survfit(fit) else survfit(fit, newdata = newdata)
+  grps <- if (is.null(newdata)) "Overall" else rep(labels, each = length(km$time))
+  data.frame(
+    time     = rep(km$time, times = if (is.null(newdata)) 1 else ncol(km$surv)),
+    cum_prob = round((1 - c(km$surv))  * 100, 1),
+    lower    = round((1 - c(km$upper)) * 100, 1),
+    upper    = round((1 - c(km$lower)) * 100, 1),
+    group    = grps
+  )
+}
+
+# rendering figure
+km_plot <- function(dat, title) { #creates
+  colors <- c("#1f77b4", "#F8766D", "#00BFC4", "#7CAE00") #assign colors for group because lines don't match without it
+  p <- plot_ly() #initiate plot
+  for (i in seq_along(unique(dat$group))) { #loop for whatever group selected
+    grp <- unique(dat$group)[i] #isolates specific level info for reference
+    sub <- dat[dat$group == grp, ] #limits to obs from group
+    col <- colors[i] #specifies color from above
+    # creates Confidence interval
+    p <- add_trace(p, x = sub$time, y = sub$upper, type = "scatter", mode = "lines",
+                   line = list(color = "transparent"), name = grp, legendgroup = grp,
+                   showlegend = FALSE, hoverinfo = "skip")
+    p <- add_trace(p, x = c(sub$time, rev(sub$time)), y = c(sub$lower, rev(sub$upper)),
+                   type = "scatter", mode = "lines", fill = "toself",
+                   fillcolor = paste0(col, "33"), line = list(color = "transparent"),
+                   name = grp, legendgroup = grp, showlegend = FALSE, hoverinfo = "skip")
+    # creates line of cum prob
+    p <- add_trace(p, x = sub$time, y = sub$cum_prob, type = "scatter", mode = "lines",
+                   line = list(color = col, width = 2), name = grp, legendgroup = grp,
+                   showlegend = TRUE,
+                   text = paste0("Time (days): ", sub$time, "<br>",
+                                 "Cumulative Probability: ", sub$cum_prob, "%<br>",
+                                 "95% CI: ", sub$lower, "% - ", sub$upper, "%"),
+                   hoverinfo = "text")
+  } #adds axis labels, title and legend
+  p %>% layout(
+    title     = list(text = title, font = list(size = 13), x = 0.5),
+    xaxis     = list(title = "Time (days)"),
+    yaxis     = list(title = "PrEP Initiation Probability (%)", ticksuffix = "%", range = c(0, 100)),
+    legend    = list(orientation = "h", x = 0.5, xanchor = "center", y = -0.2, yanchor = "top"),
+    hovermode = "closest",
+    margin    = list(t = 40, b = 60)
+  )
+}
+
+# isolates levels for vars of interest
+lev_protect   <- levels(df$perc_protect)
+lev_future    <- levels(df$future_prep)
+lev_stopnever <- levels(df$stopnever)
+
+#pulls values for creating figure from models and assigns levels
+p_overall   <- km_plot(km_df(fit_overall), "Overall PrEP Initiation")
+p_protect   <- km_plot(km_df(fit_protect,   data.frame(perc_protect = lev_protect),
+                              c("Lower", "Higher")[seq_along(lev_protect)]),
+                        "PrEP Initiation by Protection Perception")
+p_future    <- km_plot(km_df(fit_future,    data.frame(future_prep = lev_future),
+                              c("Not likely", "Somewhat likely", "Very likely")[seq_along(lev_future)]),
+                        "PrEP Initiation by Future Intention")
+p_stopnever <- km_plot(km_df(fit_stopnever, data.frame(stopnever = lev_stopnever),
+                              c("No", "Yes")[seq_along(lev_stopnever)]),
+                        "PrEP Initiation by Information Indicator")
+
+# creates labels for forrest plot
+df$stopnever_f    <- factor(df$stopnever,        labels = c("No Misinformation", "Perceived as unneeded (vs not)"))
+df$perc_protect_f <- relevel(factor(df$perc_protect,
+                               labels = c("Low perceived protection", "High perceived protection (vs low)")),
+                               ref = "Low perceived protection")
+df$future_f       <- factor(df$future_prep,      labels = c("Not likely", "Somewhat likely (vs not)", "Very likely (vs not)"))
+df$educ2_f        <- factor(df$educ2,            labels = c("Highschool or less", "More than highschool (vs less)"))
+df$ins2_f         <- factor(df$ins2,             labels = c("Uninsured", "Insured (vs uninsured)"))
+df$income_f       <- factor(df$incomenew,        labels = c("Less than $40,000", "$40,000+ (vs less)"))
+df$race2_f        <- factor(df$race2,            labels = c("White", "Not White (vs white)"))
+df$site_f         <- factor(df$site,             labels = c("Atlanta", "Detroit (vs Atlanta)", "New York City (vs Atlanta)"))
+df$rand_f         <- factor(df$rand_assign_text, labels = c("Control", "Intervention (vs control)"))
+
+# run cox model
+cox_adj   <- coxph(Surv(timestart, timestop, prep) ~
+                     stopnever_f + perc_protect_f + future_f +
+                     educ2_f + ins2_f + income_f + race2_f + site_f + rand_f,
+                   data = df)
+
+#pull summaries
+model_sum <- summary(cox_adj)
+
+#pull HRs and, p-val, CI, and names for labels
+forest_all <- data.frame(
+  Variable = gsub("stopnever_f|perc_protect_f|future_f|educ2_f|ins2_f|income_f|race2_f|site_f|rand_f",
+                  "", rownames(model_sum$conf.int)),
+  HR       = model_sum$conf.int[, "exp(coef)"],
+  Lower    = model_sum$conf.int[, "lower .95"],
+  Upper    = model_sum$conf.int[, "upper .95"],
+  PVal     = model_sum$coefficients[, "Pr(>|z|)"],
+  ID       = dplyr::case_when(
+    grepl("stopnever",       rownames(model_sum$conf.int)) ~ "stopnever",
+    grepl("perc_protect",    rownames(model_sum$conf.int)) ~ "perc_protect",
+    grepl("Somewhat likely", rownames(model_sum$conf.int)) ~ "future2",
+    grepl("Very likely",     rownames(model_sum$conf.int)) ~ "future3",
+    grepl("educ2",           rownames(model_sum$conf.int)) ~ "educ2",
+    grepl("ins2",            rownames(model_sum$conf.int)) ~ "ins2",
+    grepl("income",          rownames(model_sum$conf.int)) ~ "income",
+    grepl("race2",           rownames(model_sum$conf.int)) ~ "race2",
+    grepl("Detroit",         rownames(model_sum$conf.int)) ~ "site2",
+    grepl("New York City",   rownames(model_sum$conf.int)) ~ "site3",
+    grepl("rand",            rownames(model_sum$conf.int)) ~ "rand",
+    TRUE ~ NA_character_
+  )
+)
+```
+
+PrEP Use Plots {.no-sidebar}
+=====================================
+
+Row {data-height=150}
+-------------------------------------
+
+### **Behavioral indicators impact on PrEP uptake**
+
+```{r km-controls, echo=FALSE}
+#add choices and input vars
+selectInput(
+  inputId  = "chosen_plot",
+  label    = "Choose a cumulative probability plot:",
+  choices  = c(
+    "Overall (no stratification)" = "overall",
+    "By protection perception"    = "protect",
+    "By future intention"         = "future",
+    "By prior misinformation"     = "stopnever"
+  ),
+  selected = "overall"
+)
+
+#output text corresponding with what's selected
+uiOutput("plot_blurb")
+```
+
+Row {data-height=450}
+-------------------------------------
+
+### Plot
+
+```{r km-plot-output, echo=FALSE}
+# output graph below button and blurb
+plotlyOutput("km_plot", width = "100%", height = "380px")
+```
+
+```{r km-server, echo=FALSE}
+#outputs for blurbs
+output$plot_blurb <- renderUI({
+  text <- switch(input$chosen_plot,
+    overall   = "This graph outlines the unadjusted cumulative probability of PrEP use during the study period among MSM who had indications for PrEP but were not using it at baseline. Overall cumulative probability of PrEP uptake was 34.6% at the end of the study period.",
+    protect   = "This graph shows how participants' probability of PrEP use differs over time by reported perception of PrEP efficacy. Individuals reporting high perceived PrEP efficacy started PrEP more often and at a faster rate (p<0.001).",
+    future    = "This graph displays how participants' probability of PrEP use differs over time by intention to take PrEP. Individuals reporting different intentions had different trends in PrEP uptake over time (p<0.001).",
+    stopnever = "This graph illustrates how prior misinformation relates to PrEP initiation. Individuals previously not attributing themselves to PrEP use started PrEP less and at a slower rate (p<0.001)."
+  )
+  tags$p(style = "font-size: 14px;", text)
+})
+#specify hover
+output$km_plot <- renderPlotly({
+  switch(input$chosen_plot,
+    overall   = p_overall,
+    protect   = p_protect,
+    future    = p_future,
+    stopnever = p_stopnever
+  )
+})
+```
+
+Row {data-height=10,data-width=250}
+-------------------------------------
+
+### 
+
+```{r, echo=FALSE}
+valueBox(value = " ", 
+         caption = "IMB behavioral indicators (Information, Motivation, & Behavioral Skills) are associated with higher PrEP uptake overtime.", 
+         color = "primary")
+```
+
+
+Hazard of PrEP use {.no-sidebar}
+=====================================
+
+{data-width=250 .sidebar}
+-------------------------------------
+
+### **Adjusted hazard of PrEP uptake by variable**
+
+```{r forest-controls, echo=FALSE}
+#add checkboxes and labels for graph for HR
+checkboxGroupInput(
+  inputId  = "vars_to_show",
+  label    = "Select variables to display:",
+  choices  = c(
+    "Perceived as unneeded (vs not)"     = "stopnever",
+    "High perceived protection (vs low)" = "perc_protect",
+    "Somewhat likely to start (vs not)"  = "future2",
+    "Very likely to start (vs not)"      = "future3",
+    "More than highschool (vs less)"     = "educ2",
+    "Insured (vs uninsured)"             = "ins2",
+    "$40,000+ (vs less)"                 = "income",
+    "Not White (vs white)"               = "race2",
+    "Detroit (vs Atlanta)"               = "site2",
+    "New York City (vs Atlanta)"         = "site3",
+    "Intervention (vs control)"          = "rand"
+  ), #select IMB vars for automatic selection
+  selected = c("stopnever", "perc_protect", "future2", "future3")
+)
+```
+
+Row {data-height=100%}
+-------------------------------------
+
+### Forest Plot
+
+```{r forest-plot-output, echo=FALSE}
+#output plot
+plotlyOutput("forest_plot", width = "100%", height = "380px")
+```
+
+Row {data-height=60}
+-------------------------------------
+
+```{r forest-caption, echo=FALSE}
+#caption with description beneath 
+tags$p(
+  style = "font-size: 12px; color: #555;",
+  "Variables assessed as IMB indicators (Information: previous PrEP cessation or avoidance, Motivation: perceived efficacy of PrEP, Behavioral skills: intention to start PrEP) were statistically significantly associated with PrEP uptake. None of the confounders included due to a priori criteria being met were statistically significant in the model, but all variables included for selection in the forrest plot were adjusted for in the model."
+)
+```
+
+```{r forest-server, echo=FALSE}
+#output forest plot
+output$forest_plot <- renderPlotly({
+  dat <- forest_all %>%
+    filter(ID %in% input$vars_to_show) %>%
+    mutate(VarFactor = factor(Variable, levels = rev(Variable)))
+#confirm labels for hover info
+  p <- ggplot(dat, aes(x = HR, y = VarFactor,
+    text = paste0("Variable: ", Variable, "<br>",
+                  "HR: ", sprintf("%.2f", HR), "<br>",
+                  "95% CI: ", sprintf("%.2f", Lower), " - ", sprintf("%.2f", Upper), "<br>",
+                  "p-value: ", signif(PVal, 3)))) +
+    geom_errorbarh(aes(xmin = Lower, xmax = Upper), height = 0.15) +
+    geom_point(size = 3) +
+    geom_vline(xintercept = 1, linetype = "dashed", color = "cornflowerblue") +
+    scale_x_continuous(trans = "log10") +
+    labs(title = "Hazard Ratio (IMB Framework)",
+         subtitle = "Adjusted model — displaying selected variables", y = "") +
+    theme_bw()
+
+  ggplotly(p, tooltip = "text")
+})
+```
+
+Row {data-height=10,data-width=250}
+-------------------------------------
+
+### 
+
+```{r, echo=FALSE}
+valueBox(value = " ", 
+         caption = "IMB behavioral indicators (Information, Motivation, & Behavioral Skills) are associated with higher PrEP uptake overtime.", 
+         color = "primary")
+```
+About
+=====================================
+
+Row {data-height=100}
+-------------------------------------
+
+### 
+
+```{r, echo=FALSE}
+valueBox(value = "Study Overview", 
+         caption = "", 
+         icon = "fa-people-group",
+         color = "primary")
+```
+
+Row
+-------------------------------------
+
+###
+
+
+We analyzed a subset of the [M-Cubed project](https://pmc.ncbi.nlm.nih.gov/articles/PMC6884718/) dataset consisting of surveys requested every three months over resulting in four surveys over the study period. Surveys were completed by men that have sex with men (MSM) living in Atlanta, Detroit, and New York City from 2018-2019. Assessments included 360 HIV negative men that had not started PreExposure Prophylaxis (PrEP) at baseline but have baseline indications for PrEP according to the [CDC clinical guidelines](https://www.cdc.gov/hivnexus/hcp/prep/index.html) of PrEP recommendation. Self-reported PrEP initiation was our main outcome of interest assessed. The Information-Motivation-Behavioral Skills (IMB) model was used as a behavioral framework to assess mechanisms informing PrEP uptake.
+
+Row {data-height=10,data-width=250}
+-------------------------------------
+
+### 
+
+```{r, echo=FALSE}
+valueBox(value = " ", 
+         caption = "IMB behavioral indicators (Information, Motivation, & Behavioral Skills) are associated with higher PrEP uptake overtime.", 
+         color = "primary")
+```

@@ -1,0 +1,18 @@
+M Cubed Information, Motivation, Behavioral Skills Model Dashboard
+================
+Mele Mafi
+
+**M-Cubed Cohort**
+
+
+These analyses were based on survey completions that took place over approximately one year as part of the [M Cubed project](https://pmc.ncbi.nlm.nih.gov/articles/PMC8851328/). Individuals in this study were men from Atlanta, Georgia, New York City, New York, and Detroit, Michigan. The data were collected from 2018-2019. Individuals included in this analysis were men that have sex with men (MSM) with an indication for PrEP use at baseline. 
+
+
+
+**IMB Model**
+
+
+The Information-Motivation-Behavioral Skills (IMB) model was used as a behavioral framework to assess mechanisms informing PrEP uptake. The *Information* indicator was defined as reporting previously indicating not starting or stopping PrEP due to it not being necessary (not having personal applicability of PrEP). The *Motivation* indicator was defind as reporting perceived efficacy of PrEP. The *Behavioral Skills* indicator was defined as reporting intention to take PrEP through Likert reporting of future PrEP use. We performed a Cox Proportional Hazard model to identify PrEP uptake overtime.
+
+
+*for additional information refer to the "About" section of the dashboard.*
