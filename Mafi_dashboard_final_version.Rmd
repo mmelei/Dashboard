@@ -19,7 +19,7 @@ library(flexdashboard)
 library(shiny)
 
 # --- Load and prep data ---
-df <- read_csv("/Users/mele/Dashboard/final_full_set_cohort.csv")
+df <- read_csv("final_full_set_cohort.csv")
 
 #make vars numeric for survival analysis figures
 df$timestart <- as.numeric(df$timestart)
